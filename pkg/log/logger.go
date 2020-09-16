@@ -1,9 +1,11 @@
 package log
 
 import (
+	"time"
+	stringutil "welights.net/go_template/pkg/utils/stringutils"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"time"
 )
 
 var levelMapping = map[string]zapcore.Level{
@@ -17,7 +19,9 @@ var levelMapping = map[string]zapcore.Level{
 
 // InitLogger creates a new logger.
 func InitLogger(level string) *zap.Logger {
-	config := initConfig(level)
+	var options LoggerOptions
+	options.Level = level
+	config := initConfig(options)
 
 	var err error
 	zapLogger, err := config.Build(zap.AddCallerSkip(1))
@@ -31,16 +35,56 @@ func InitLogger(level string) *zap.Logger {
 	return logger
 }
 
-func initConfig(level string) zap.Config {
-	config := zap.NewProductionConfig()
+type LoggerOptions struct {
+	Level            string
+	OutputPaths      string
+	ErrorOutputPaths string
+}
 
-	config.Level = getLevel(level)
-	config.EncoderConfig.TimeKey = "time"
-	config.EncoderConfig.NameKey = "name"
-	std := []string{"stdout", "$HOME/std.log"}
-	err := []string{"stderr","$HOME/err.log"}
+func InitLoggerWithOptions(options LoggerOptions) *zap.Logger {
+	config := initConfig(options)
+
+	var err error
+	zapLogger, err := config.Build(zap.AddCallerSkip(1))
+	if err != nil {
+		panic("Init logger failed:" + err.Error())
+	}
+
+	logger = zapLogger
+	zap.ReplaceGlobals(zapLogger)
+
+	return logger
+}
+
+func initConfig(options LoggerOptions) zap.Config {
+	config := zap.NewProductionConfig()
+	//默认 error
+	if stringutil.IsBlank(options.Level) {
+		options.Level = "error"
+	}
+
+	config.Level = getLevel(options.Level)
+
+	std := []string{"stdout"}
+	err := []string{"stderr"}
+
+	if stringutil.IsNotBlank(options.OutputPaths) {
+		std = append(std, options.OutputPaths)
+	}
+
+	if stringutil.IsNotBlank(options.OutputPaths) {
+		err = append(err, options.ErrorOutputPaths)
+	}
+
 	config.OutputPaths = std
 	config.ErrorOutputPaths = err
+
+	config.EncoderConfig.TimeKey = "time"
+	config.EncoderConfig.NameKey = "name"
+	config.EncoderConfig.EncodeTime = func(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
+		encodeTimeLayout(t, "2006-01-02 15:04:05.000", enc)
+	}
+
 	logLevel = config.Level.String()
 
 	return config
